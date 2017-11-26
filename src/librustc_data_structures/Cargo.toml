@@ -13,6 +13,7 @@ log = "0.3"
 serialize = { path = "../libserialize" }
 cfg-if = "0.1.2"
 owning_ref = { git = "https://github.com/Zoxc/owning-ref-rs.git" }
+rayon = { git = "https://github.com/Zoxc/rayon.git", branch = "fiber" }
 
 [dependencies.parking_lot]
 version = "0.5"

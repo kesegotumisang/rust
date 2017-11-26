@@ -760,7 +760,7 @@ pub(super) struct CurrentDepGraph {
     nodes: IndexVec<DepNodeIndex, DepNode>,
     edges: IndexVec<DepNodeIndex, Vec<DepNodeIndex>>,
     node_to_node_index: FxHashMap<DepNode, DepNodeIndex>,
-    task_stack: Vec<OpenTask>,
+    task_stack: Vec<OpenTask>, // FIXME: Make this thread-local?
     forbidden_edge: Option<EdgeFilter>,
 
     // Anonymous DepNodes are nodes the ID of which we compute from the list of

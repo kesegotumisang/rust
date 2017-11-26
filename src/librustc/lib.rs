@@ -82,6 +82,8 @@ extern crate rustc_back;
 extern crate serialize;
 extern crate rustc_const_math;
 extern crate rustc_errors as errors;
+extern crate rayon;
+extern crate rayon_core;
 #[macro_use] extern crate log;
 #[macro_use] extern crate syntax;
 extern crate syntax_pos;

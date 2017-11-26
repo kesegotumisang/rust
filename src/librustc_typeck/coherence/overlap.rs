@@ -16,14 +16,14 @@ use rustc::traits;
 use rustc::ty::{self, TyCtxt, TypeFoldable};
 use syntax::ast;
 use rustc::hir;
-use rustc::hir::itemlikevisit::ItemLikeVisitor;
+use rustc::hir::itemlikevisit::ParItemLikeVisitor;
 
 pub fn check_auto_impls<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
-    let mut overlap = OverlapChecker { tcx };
+    let overlap = OverlapChecker { tcx };
 
     // this secondary walk specifically checks for some other cases,
     // like defaulted traits, for which additional overlap rules exist
-    tcx.hir.krate().visit_all_item_likes(&mut overlap);
+    tcx.hir.krate().par_visit_all_item_likes(&overlap);
 }
 
 pub fn check_impl<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, node_id: ast::NodeId) {
@@ -71,8 +71,8 @@ struct OverlapChecker<'cx, 'tcx: 'cx> {
     tcx: TyCtxt<'cx, 'tcx, 'tcx>,
 }
 
-impl<'cx, 'tcx, 'v> ItemLikeVisitor<'v> for OverlapChecker<'cx, 'tcx> {
-    fn visit_item(&mut self, item: &'v hir::Item) {
+impl<'cx, 'tcx, 'v> ParItemLikeVisitor<'v> for OverlapChecker<'cx, 'tcx> {
+    fn visit_item(&self, item: &'v hir::Item) {
         match item.node {
             hir::ItemAutoImpl(..) => {
                 // look for another auto impl; note that due to the
@@ -102,9 +102,9 @@ impl<'cx, 'tcx, 'v> ItemLikeVisitor<'v> for OverlapChecker<'cx, 'tcx> {
         }
     }
 
-    fn visit_trait_item(&mut self, _trait_item: &hir::TraitItem) {
+    fn visit_trait_item(&self, _trait_item: &hir::TraitItem) {
     }
 
-    fn visit_impl_item(&mut self, _impl_item: &hir::ImplItem) {
+    fn visit_impl_item(&self, _impl_item: &hir::ImplItem) {
     }
 }

@@ -854,7 +854,7 @@ pub struct GlobalCtxt<'tcx> {
     pub data_layout: TargetDataLayout,
 
     /// Used to prevent layout from recursing too deeply.
-    pub layout_depth: LockCell<usize>,
+    pub layout_depth: LockCell<usize>, // FIXME: Make thread safe
 
     /// Map from function to the `#[derive]` mode that it's defining. Only used
     /// by `proc-macro` crates.
@@ -890,6 +890,7 @@ impl<'tcx> GlobalCtxt<'tcx> {
         }
     }
 }
+
 
 impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn alloc_generics(self, generics: ty::Generics) -> &'gcx ty::Generics {
@@ -1080,7 +1081,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 
         ::rustc_data_structures::sync::assert_sync::<GlobalCtxt>();
 
-        tls::enter_global(GlobalCtxt {
+        let gcx = &GlobalCtxt {
             sess: s,
             cstore,
             global_arenas: &arenas.global,
@@ -1125,7 +1126,70 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             all_traits: Lock::new(None),
             tx_to_llvm_workers: Lock::new(tx),
             output_filenames: Arc::new(output_filenames.clone()),
-       }, f)
+        };
+
+        #[cfg(parallel_queries)]
+        let r = {
+            use util::common::PROFQ_CHAN;
+            use syntax;
+            use syntax_pos;
+            use rayon;
+
+            let config = rayon::Configuration::new().num_threads(gcx.sess.query_threads())
+                                                    .stack_size(16 * 1024 * 1024);
+
+            let with_pool = move |pool: &rayon::ThreadPool| {
+                pool.with_global_registry(|| {
+                    tls::enter_global(gcx, f)
+                })
+            };
+
+            fn try_with<T, F, R>(key: &'static ::scoped_tls::ScopedKey<T>, f: F) -> R
+                where F: FnOnce(Option<&T>) -> R
+            {
+                if key.is_set() {
+                    key.with(|v| f(Some(v)))
+                } else {
+                    f(None)
+                }
+            }
+
+            fn maybe_set<T, F, R>(key: &'static ::scoped_tls::ScopedKey<T>,
+                                  value: Option<&T>, f: F) -> R
+                where F: FnOnce() -> R
+            {
+                if let Some(v) = value {
+                    key.set(v, f)
+                } else {
+                    f()
+                }
+            }
+
+            try_with(&PROFQ_CHAN, |prof_chan| {
+                try_with(&syntax::GLOBALS, |syntax_globals| {
+                    try_with(&syntax_pos::GLOBALS, |syntax_pos_globals| {
+                        let main_handler = move |worker: &mut FnMut()| {
+                            maybe_set(&PROFQ_CHAN, prof_chan, || {
+                                maybe_set(&syntax::GLOBALS, syntax_globals, || {
+                                    maybe_set(&syntax_pos::GLOBALS, syntax_pos_globals, || {
+                                        tls::enter_global(gcx, |_| {
+                                            worker();
+                                        })
+                                    })
+                                })
+                            })
+                        };
+
+                        rayon::ThreadPool::scoped_pool(config, main_handler, with_pool).unwrap()
+                    })
+                })
+            })
+        };
+
+        #[cfg(not(parallel_queries))]
+        let r = tls::enter_global(gcx, f);
+
+        r
     }
 
     pub fn consider_optimizing<T: Fn() -> String>(&self, msg: T) -> bool {
@@ -1438,7 +1502,7 @@ pub mod tls {
         })
     }
 
-    pub fn enter_global<'gcx, F, R>(gcx: GlobalCtxt<'gcx>, f: F) -> R
+    pub fn enter_global<'gcx, F, R>(gcx: &GlobalCtxt<'gcx>, f: F) -> R
         where F: for<'a> FnOnce(TyCtxt<'a, 'gcx, 'gcx>) -> R
     {
         syntax_pos::SPAN_DEBUG.with(|span_dbg| {

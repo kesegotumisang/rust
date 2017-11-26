@@ -50,6 +50,12 @@ cfg_if! {
             }
         }
 
+        pub use std::iter::Iterator as ParallelIterator;
+
+        pub fn par_iter<T: IntoIterator>(t: T) -> T::IntoIter {
+            t.into_iter()
+        }
+
         pub type MetadataRef = OwningRef<Box<Erased>, [u8]>;
 
         pub use std::rc::Rc as Lrc;
@@ -161,6 +167,13 @@ cfg_if! {
         pub use self::Lock as MTLock;
 
         use parking_lot::Mutex as InnerLock;
+
+        pub use rayon::iter::ParallelIterator;
+        use rayon::iter::IntoParallelIterator;
+
+        pub fn par_iter<T: IntoParallelIterator>(t: T) -> T::Iter {
+            t.into_par_iter()
+        }
 
         pub type MetadataRef = OwningRef<Box<Erased + Send + Sync>, [u8]>;
 

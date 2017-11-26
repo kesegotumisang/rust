@@ -42,6 +42,7 @@ use std::mem;
 use std::{error, fmt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
+use std::cell::RefCell;
 
 mod diagnostic;
 mod diagnostic_builder;
@@ -243,12 +244,15 @@ pub struct Handler {
     emitter: Lock<Box<Emitter + Send>>,
     continue_after_error: LockCell<bool>,
     delayed_span_bug: Lock<Option<Diagnostic>>,
-    tracked_diagnostics: Lock<Option<Vec<Diagnostic>>>,
 
     // This set contains a hash of every diagnostic that has been emitted by
     // this handler. These hashes is used to avoid emitting the same error
     // twice.
     emitted_diagnostics: Lock<FxHashSet<u128>>,
+}
+
+thread_local! {
+    static TRACKED_DIAGNOSTICS: RefCell<Option<Vec<Diagnostic>>> = RefCell::new(None);
 }
 
 #[derive(Default)]
@@ -302,7 +306,6 @@ impl Handler {
             emitter: Lock::new(e),
             continue_after_error: LockCell::new(true),
             delayed_span_bug: Lock::new(None),
-            tracked_diagnostics: Lock::new(None),
             emitted_diagnostics: Lock::new(FxHashSet()),
         }
     }
@@ -563,20 +566,24 @@ impl Handler {
     pub fn track_diagnostics<F, R>(&self, f: F) -> (R, Vec<Diagnostic>)
         where F: FnOnce() -> R
     {
-        let prev = mem::replace(&mut *self.tracked_diagnostics.borrow_mut(),
-                                Some(Vec::new()));
-        let ret = f();
-        let diagnostics = mem::replace(&mut *self.tracked_diagnostics.borrow_mut(), prev)
-            .unwrap();
-        (ret, diagnostics)
+        TRACKED_DIAGNOSTICS.with(|tracked_diagnostics| {
+            let prev = mem::replace(&mut *tracked_diagnostics.borrow_mut(),
+                                    Some(Vec::new()));
+            let ret = f();
+            let diagnostics = mem::replace(&mut *tracked_diagnostics.borrow_mut(), prev)
+                .unwrap();
+            (ret, diagnostics)
+        })
     }
 
     fn emit_db(&self, db: &DiagnosticBuilder) {
         let diagnostic = &**db;
 
-        if let Some(ref mut list) = *self.tracked_diagnostics.borrow_mut() {
-            list.push(diagnostic.clone());
-        }
+        TRACKED_DIAGNOSTICS.with(|tracked_diagnostics| {
+            if let Some(ref mut list) = *tracked_diagnostics.borrow_mut() {
+                list.push(diagnostic.clone());
+            }
+        });
 
         let diagnostic_hash = {
             use std::hash::Hash;

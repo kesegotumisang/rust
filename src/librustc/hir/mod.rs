@@ -44,6 +44,7 @@ use syntax::util::ThinVec;
 use ty::AdtKind;
 
 use rustc_data_structures::indexed_vec;
+use rustc_data_structures::sync::{ParallelIterator, par_iter, Send, Sync};
 
 use serialize::{self, Encoder, Encodable, Decoder, Decodable};
 use std::collections::BTreeMap;
@@ -572,6 +573,23 @@ impl Crate {
         for (_, impl_item) in &self.impl_items {
             visitor.visit_impl_item(impl_item);
         }
+    }
+
+    /// A parallel version of visit_all_item_likes
+    pub fn par_visit_all_item_likes<'hir, V>(&'hir self, visitor: &V)
+        where V: itemlikevisit::ParItemLikeVisitor<'hir> + Sync + Send
+    {
+        par_iter(&self.items).for_each(|(_, item)| {
+            visitor.visit_item(item);
+        });
+
+        par_iter(&self.trait_items).for_each(|(_, trait_item)| {
+            visitor.visit_trait_item(trait_item);
+        });
+
+        par_iter(&self.impl_items).for_each(|(_, impl_item)| {
+            visitor.visit_impl_item(impl_item);
+        });
     }
 
     pub fn body(&self, id: BodyId) -> &Body {

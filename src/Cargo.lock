@@ -130,7 +130,7 @@ version = "0.0.0"
 dependencies = [
  "build_helper 0.1.0",
  "cc 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "filetime 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "getopts 0.2.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "cmake"
-version = "0.1.28"
+version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "cc 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1022,7 +1022,7 @@ version = "0.6.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "cc 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "curl-sys 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.34 (registry+https://github.com/rust-lang/crates.io-index)",
  "libssh2-sys 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1036,7 +1036,7 @@ name = "libssh2-sys"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.34 (registry+https://github.com/rust-lang/crates.io-index)",
  "libz-sys 1.0.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "openssl-sys 0.9.23 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1506,7 +1506,7 @@ dependencies = [
 [[package]]
 name = "rayon"
 version = "0.9.0"
-source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#dcca3e3bdc30828645df857732ed3318124c3e73"
+source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#8811138adf4e396071e1bad4ee21efa689a1453a"
 dependencies = [
  "either 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rayon-core 1.3.0 (git+https://github.com/Zoxc/rayon.git?branch=fiber)",
@@ -1524,17 +1524,20 @@ dependencies = [
 [[package]]
 name = "rayon-core"
 version = "1.3.0"
-source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#dcca3e3bdc30828645df857732ed3318124c3e73"
+source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#8811138adf4e396071e1bad4ee21efa689a1453a"
 dependencies = [
  "coco 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "context 2.0.0 (git+https://github.com/Zoxc/context-rs.git)",
  "ctrlc 3.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gcc 0.3.54 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.34 (registry+https://github.com/rust-lang/crates.io-index)",
  "num_cpus 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "scoped-tls 0.1.0 (git+https://github.com/Zoxc/scoped-tls.git)",
+ "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1758,7 +1761,7 @@ dependencies = [
  "alloc 0.0.0",
  "alloc_system 0.0.0",
  "build_helper 0.1.0",
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "core 0.0.0",
 ]
 
@@ -1777,7 +1780,7 @@ name = "rustc_binaryen"
 version = "0.0.0"
 dependencies = [
  "cc 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.34 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1924,7 +1927,7 @@ dependencies = [
  "alloc 0.0.0",
  "alloc_system 0.0.0",
  "build_helper 0.1.0",
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "core 0.0.0",
 ]
 
@@ -1970,7 +1973,7 @@ dependencies = [
  "alloc 0.0.0",
  "alloc_system 0.0.0",
  "build_helper 0.1.0",
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "core 0.0.0",
 ]
 
@@ -2094,7 +2097,7 @@ dependencies = [
  "alloc 0.0.0",
  "alloc_system 0.0.0",
  "build_helper 0.1.0",
- "cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "core 0.0.0",
 ]
 
@@ -2806,7 +2809,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum cc 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "a9b13a57efd6b30ecd6598ebdb302cca617930b5470647570468a65d12ef9719"
 "checksum cfg-if 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "d4c819a1287eb618df47cc647173c5c4c66ba19d888a6e50d605672aed3140de"
 "checksum clap 2.28.0 (registry+https://github.com/rust-lang/crates.io-index)" = "dc34bf7d5d66268b466b9852bca925ec1d2650654dab4da081e63fd230145c2e"
-"checksum cmake 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)" = "e14cd15a7cbc2c6a905677e54b831ee91af2ff43b352010f6133236463b65cac"
+"checksum cmake 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)" = "56d741ea7a69e577f6d06b36b7dff4738f680593dc27a701ffa8506b73ce28bb"
 "checksum coco 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "c06169f5beb7e31c7c67ebf5540b8b472d23e3eade3b2ec7d1f5b504a85f91bd"
 "checksum coco 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "fe0d28c33ff5ca8c62d881897be04776fd5341205303f21aa0443f0844d38bf7"
 "checksum commoncrypto 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d056a8586ba25a1e4d61cb090900e495952c7886786fc55f909ab2f819b69007"

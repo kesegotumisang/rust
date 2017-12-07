@@ -1130,17 +1130,25 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
 
         #[cfg(parallel_queries)]
         let r = {
+            use std::time::Instant;
             use util::common::PROFQ_CHAN;
+            use util::common::print_time_passes_entry;
             use syntax;
             use syntax_pos;
             use rayon;
+
+            let pool_start = Instant::now();
 
             let config = rayon::Configuration::new().num_threads(gcx.sess.query_threads())
                                                     .stack_size(16 * 1024 * 1024);
 
             let with_pool = move |pool: &rayon::ThreadPool| {
                 pool.with_global_registry(|| {
-                    tls::enter_global(gcx, f)
+                    print_time_passes_entry(gcx.sess.time_passes(),
+                                            "rayon thread pool starting",
+                                            pool_start.elapsed());
+
+                    (tls::enter_global(gcx, f), Instant::now())
                 })
             };
 
@@ -1165,7 +1173,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                 }
             }
 
-            try_with(&PROFQ_CHAN, |prof_chan| {
+            let (r, pool_end) = try_with(&PROFQ_CHAN, |prof_chan| {
                 try_with(&syntax::GLOBALS, |syntax_globals| {
                     try_with(&syntax_pos::GLOBALS, |syntax_pos_globals| {
                         let main_handler = move |worker: &mut FnMut()| {
@@ -1183,7 +1191,13 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                         rayon::ThreadPool::scoped_pool(config, main_handler, with_pool).unwrap()
                     })
                 })
-            })
+            });
+
+            print_time_passes_entry(gcx.sess.time_passes(),
+                                    "rayon thread pool stopping",
+                                    pool_end.elapsed());
+
+            r
         };
 
         #[cfg(not(parallel_queries))]

@@ -33,6 +33,8 @@
 #![feature(slice_patterns)]
 #![feature(conservative_impl_trait)]
 
+#![recursion_limit="256"]
+
 use rustc::dep_graph::WorkProduct;
 use syntax_pos::symbol::Symbol;
 

@@ -38,7 +38,7 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_data_structures::stable_hasher::StableHasher;
 
 use std::borrow::Cow;
-use std::mem;
+//use std::mem;
 use std::{error, fmt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
@@ -566,13 +566,15 @@ impl Handler {
     pub fn track_diagnostics<F, R>(&self, f: F) -> (R, Vec<Diagnostic>)
         where F: FnOnce() -> R
     {
-        TRACKED_DIAGNOSTICS.with(|tracked_diagnostics| {
-            let prev = mem::replace(&mut *tracked_diagnostics.borrow_mut(),
-                                    Some(Vec::new()));
+        TRACKED_DIAGNOSTICS.with(|_tracked_diagnostics| {
+            /*let prev = mem::replace(&mut *tracked_diagnostics.borrow_mut(),
+                                    Some(Vec::new()));*/
             let ret = f();
-            let diagnostics = mem::replace(&mut *tracked_diagnostics.borrow_mut(), prev)
+            /*let diagnostics = mem::replace(&mut *tracked_diagnostics.borrow_mut(), prev)
                 .unwrap();
-            (ret, diagnostics)
+            (ret, diagnostics)*/
+            // FIXME: Make fiber safe
+            (ret, Vec::new())
         })
     }
 

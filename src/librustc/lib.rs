@@ -51,6 +51,7 @@
 #![feature(i128_type)]
 #![feature(inclusive_range)]
 #![feature(inclusive_range_syntax)]
+#![feature(iterator_step_by)]
 #![cfg_attr(windows, feature(libc))]
 #![feature(macro_vis_matcher)]
 #![feature(match_default_bindings)]
@@ -79,6 +80,7 @@ extern crate libc;
 extern crate owning_ref;
 extern crate rustc_back;
 #[macro_use] extern crate rustc_data_structures;
+#[macro_use] extern crate lazy_static;
 extern crate serialize;
 extern crate rustc_const_math;
 extern crate rustc_errors as errors;

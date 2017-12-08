@@ -778,7 +778,8 @@ impl<'tcx> CommonTypes<'tcx> {
 #[derive(Copy, Clone)]
 pub struct TyCtxt<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     gcx: &'a GlobalCtxt<'gcx>,
-    interners: &'a CtxtInterners<'tcx>
+    interners: &'a CtxtInterners<'tcx>,
+    query: &'a maps::QueryJob<'gcx>,
 }
 
 impl<'a, 'gcx, 'tcx> Deref for TyCtxt<'a, 'gcx, 'tcx> {
@@ -881,18 +882,32 @@ pub struct GlobalCtxt<'tcx> {
     output_filenames: Arc<OutputFilenames>,
 }
 
-impl<'tcx> GlobalCtxt<'tcx> {
-    /// Get the global TyCtxt.
-    pub fn global_tcx<'a>(&'a self) -> TyCtxt<'a, 'tcx, 'tcx> {
+impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
+    pub fn query(self) -> &'a maps::QueryJob<'gcx> {
+        self.query
+    }
+
+    pub fn with_query<'b>(self,
+                          query: &'b maps::QueryJob<'gcx>)
+                         -> TyCtxt<'b, 'gcx, 'tcx>
+        where 'a: 'b
+    {
         TyCtxt {
-            gcx: self,
-            interners: &self.global_interners
+            gcx: self.gcx,
+            interners: self.interners,
+            query,
         }
     }
-}
 
+    /// Get the global TyCtxt.
+    pub fn global_tcx(self) -> TyCtxt<'a, 'gcx, 'gcx> {
+        TyCtxt {
+            gcx: self.gcx,
+            interners: &self.gcx.global_interners,
+            query: self.query,
+        }
+    }
 
-impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn alloc_generics(self, generics: ty::Generics) -> &'gcx ty::Generics {
         self.global_arenas.generics.alloc(generics)
     }
@@ -1342,11 +1357,14 @@ impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
 
 impl<'gcx: 'tcx, 'tcx> GlobalCtxt<'gcx> {
     /// Call the closure with a local `TyCtxt` using the given arena.
-    pub fn enter_local<F, R>(&self, arena: &'tcx DroplessArena, f: F) -> R
+    pub fn enter_local<F, R>(&self,
+                             arena: &'tcx DroplessArena,
+                             query: &maps::QueryJob<'gcx>,
+                             f: F) -> R
         where F: for<'a> FnOnce(TyCtxt<'a, 'gcx, 'tcx>) -> R
     {
         let interners = CtxtInterners::new(arena);
-        tls::enter(self, &interners, f)
+        tls::enter(self, &interners, query, f)
     }
 }
 
@@ -1498,21 +1516,33 @@ pub mod tls {
     use std::cell::Cell;
     use std::fmt;
     use syntax_pos;
+    use ty::maps;
+    use errors::{Diagnostic, TRACK_DIAGNOSTICS};
 
     /// Marker types used for the scoped TLS slot.
     /// The type context cannot be used directly because the scoped TLS
     /// in libstd doesn't allow types generic over lifetimes.
     enum ThreadLocalGlobalCtxt {}
     enum ThreadLocalInterners {}
+    enum ThreadLocalQuery {}
 
     thread_local! {
         static TLS_TCX: Cell<Option<(*const ThreadLocalGlobalCtxt,
-                                     *const ThreadLocalInterners)>> = Cell::new(None)
+                                     *const ThreadLocalInterners,
+                                     *const ThreadLocalQuery)>> = Cell::new(None)
     }
 
     fn span_debug(span: syntax_pos::Span, f: &mut fmt::Formatter) -> fmt::Result {
         with(|tcx| {
             write!(f, "{}", tcx.sess.codemap().span_to_string(span))
+        })
+    }
+
+    fn track_diagnostic(diagnostic: &Diagnostic) {
+        with(|tcx| {
+            if tcx.query.track_diagnostics {
+                tcx.query.diagnostics.lock().push(diagnostic.clone());
+            }
         })
     }
 
@@ -1522,7 +1552,17 @@ pub mod tls {
         syntax_pos::SPAN_DEBUG.with(|span_dbg| {
             let original_span_debug = span_dbg.get();
             span_dbg.set(span_debug);
-            let result = enter(&gcx, &gcx.global_interners, f);
+
+            let result = TRACK_DIAGNOSTICS.with(|current| {
+                let original = current.get();
+                current.set(track_diagnostic);
+
+                let global_query = maps::QueryJob::new(Vec::new(), false, false);
+                let result = enter(&gcx, &gcx.global_interners, &global_query, f);
+                current.set(original);
+                result
+            });
+
             span_dbg.set(original_span_debug);
             result
         })
@@ -1530,17 +1570,21 @@ pub mod tls {
 
     pub fn enter<'a, 'gcx: 'tcx, 'tcx, F, R>(gcx: &'a GlobalCtxt<'gcx>,
                                              interners: &'a CtxtInterners<'tcx>,
+                                             query: &'a maps::QueryJob<'gcx>,
                                              f: F) -> R
         where F: FnOnce(TyCtxt<'a, 'gcx, 'tcx>) -> R
     {
+        let tls_query = maps::QueryJob::new(Vec::new(), false, true);
         let gcx_ptr = gcx as *const _ as *const ThreadLocalGlobalCtxt;
         let interners_ptr = interners as *const _ as *const ThreadLocalInterners;
+        let query_ptr = &tls_query as *const _ as *const ThreadLocalQuery;
         TLS_TCX.with(|tls| {
             let prev = tls.get();
-            tls.set(Some((gcx_ptr, interners_ptr)));
+            tls.set(Some((gcx_ptr, interners_ptr, query_ptr)));
             let ret = f(TyCtxt {
                 gcx,
                 interners,
+                query,
             });
             tls.set(prev);
             ret
@@ -1551,12 +1595,14 @@ pub mod tls {
         where F: for<'a, 'gcx, 'tcx> FnOnce(TyCtxt<'a, 'gcx, 'tcx>) -> R
     {
         TLS_TCX.with(|tcx| {
-            let (gcx, interners) = tcx.get().unwrap();
+            let (gcx, interners, query) = tcx.get().unwrap();
             let gcx = unsafe { &*(gcx as *const GlobalCtxt) };
             let interners = unsafe { &*(interners as *const CtxtInterners) };
+            let query = unsafe { &*(query as *const maps::QueryJob) };
             f(TyCtxt {
                 gcx,
                 interners,
+                query,
             })
         })
     }

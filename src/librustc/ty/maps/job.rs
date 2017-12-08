@@ -17,16 +17,31 @@ use rustc_data_structures::sync::{Lock, LockGuard, Lrc};
 use rayon_core::registry::{self, Registry};
 use rayon_core::fiber::WaiterLatch;
 use rayon_core::latch::Latch;
+use syntax_pos::Span;
+use ty::maps::Query;
+use errors::Diagnostic;
 
-pub(super) struct QueryJob {
-    latch: WaiterLatch,
+pub struct QueryJob<'tcx> {
+    pub latch: WaiterLatch,
+    pub stack: Vec<(Span, Query<'tcx>)>,
+    pub track_diagnostics: bool,
+    pub tls: bool,
+    pub diagnostics: Lock<Vec<Diagnostic>>,
 }
 
-impl QueryJob {
-    pub fn new() -> Self {
+impl<'tcx> QueryJob<'tcx> {
+    pub fn new(stack: Vec<(Span, Query<'tcx>)>, track_diagnostics: bool, tls: bool) -> Self {
         QueryJob {
             latch: WaiterLatch::new(),
+            track_diagnostics,
+            diagnostics: Lock::new(Vec::new()),
+            stack,
+            tls,
         }
+    }
+
+    pub fn start(&self) {
+        self.latch.start()
     }
 
     pub fn await(&self) {
@@ -47,7 +62,7 @@ impl QueryJob {
     }
 }
 
-pub(super) enum QueryResult<T> {
-    Started(Lrc<QueryJob>),
+pub(super) enum QueryResult<'tcx, T> {
+    Started(Lrc<QueryJob<'tcx>>),
     Complete(T),
 }

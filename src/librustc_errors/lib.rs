@@ -42,7 +42,7 @@ use std::borrow::Cow;
 use std::{error, fmt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
-use std::cell::RefCell;
+use std::cell::Cell;
 
 mod diagnostic;
 mod diagnostic_builder;
@@ -251,9 +251,10 @@ pub struct Handler {
     emitted_diagnostics: Lock<FxHashSet<u128>>,
 }
 
-thread_local! {
-    static TRACKED_DIAGNOSTICS: RefCell<Option<Vec<Diagnostic>>> = RefCell::new(None);
-}
+fn default_track_diagnostic(_: &Diagnostic) {}
+
+thread_local!(pub static TRACK_DIAGNOSTICS: Cell<fn(&Diagnostic)> =
+                Cell::new(default_track_diagnostic));
 
 #[derive(Default)]
 pub struct HandlerFlags {
@@ -563,28 +564,11 @@ impl Handler {
         }
     }
 
-    pub fn track_diagnostics<F, R>(&self, f: F) -> (R, Vec<Diagnostic>)
-        where F: FnOnce() -> R
-    {
-        TRACKED_DIAGNOSTICS.with(|_tracked_diagnostics| {
-            /*let prev = mem::replace(&mut *tracked_diagnostics.borrow_mut(),
-                                    Some(Vec::new()));*/
-            let ret = f();
-            /*let diagnostics = mem::replace(&mut *tracked_diagnostics.borrow_mut(), prev)
-                .unwrap();
-            (ret, diagnostics)*/
-            // FIXME: Make fiber safe
-            (ret, Vec::new())
-        })
-    }
-
     fn emit_db(&self, db: &DiagnosticBuilder) {
         let diagnostic = &**db;
 
-        TRACKED_DIAGNOSTICS.with(|tracked_diagnostics| {
-            if let Some(ref mut list) = *tracked_diagnostics.borrow_mut() {
-                list.push(diagnostic.clone());
-            }
+        TRACK_DIAGNOSTICS.with(|track_diagnostics| {
+            track_diagnostics.get()(diagnostic);
         });
 
         let diagnostic_hash = {

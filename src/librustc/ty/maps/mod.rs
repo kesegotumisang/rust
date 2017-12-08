@@ -60,6 +60,7 @@ use self::plumbing::*;
 pub use self::plumbing::force_from_dep_node;
 
 mod job;
+pub use self::job::QueryJob;
 use self::job::QueryResult;
 
 mod keys;

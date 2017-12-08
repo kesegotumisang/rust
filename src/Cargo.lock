@@ -1506,7 +1506,7 @@ dependencies = [
 [[package]]
 name = "rayon"
 version = "0.9.0"
-source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#e2f1150cb1bed7238ac843905d39dd3d0b29376e"
+source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#87c7b4a950354503df99440183cf3bae6de0a0b4"
 dependencies = [
  "either 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rayon-core 1.3.0 (git+https://github.com/Zoxc/rayon.git?branch=fiber)",
@@ -1524,7 +1524,7 @@ dependencies = [
 [[package]]
 name = "rayon-core"
 version = "1.3.0"
-source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#e2f1150cb1bed7238ac843905d39dd3d0b29376e"
+source = "git+https://github.com/Zoxc/rayon.git?branch=fiber#87c7b4a950354503df99440183cf3bae6de0a0b4"
 dependencies = [
  "coco 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "context 2.0.0 (git+https://github.com/Zoxc/context-rs.git)",

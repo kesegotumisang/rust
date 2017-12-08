@@ -1364,7 +1364,12 @@ impl<'gcx: 'tcx, 'tcx> GlobalCtxt<'gcx> {
         where F: for<'a> FnOnce(TyCtxt<'a, 'gcx, 'tcx>) -> R
     {
         let interners = CtxtInterners::new(arena);
-        tls::enter(self, &interners, query, f)
+        let tcx = TyCtxt {
+            gcx: self,
+            interners: &interners,
+            query,
+        };
+        tls::enter(tcx, f)
     }
 }
 
@@ -1511,26 +1516,13 @@ impl<'a, 'tcx> Lift<'tcx> for &'a Slice<Predicate<'a>> {
 }
 
 pub mod tls {
-    use super::{CtxtInterners, GlobalCtxt, TyCtxt};
+    use super::{GlobalCtxt, TyCtxt};
 
-    use std::cell::Cell;
     use std::fmt;
     use syntax_pos;
     use ty::maps;
     use errors::{Diagnostic, TRACK_DIAGNOSTICS};
-
-    /// Marker types used for the scoped TLS slot.
-    /// The type context cannot be used directly because the scoped TLS
-    /// in libstd doesn't allow types generic over lifetimes.
-    enum ThreadLocalGlobalCtxt {}
-    enum ThreadLocalInterners {}
-    enum ThreadLocalQuery {}
-
-    thread_local! {
-        static TLS_TCX: Cell<Option<(*const ThreadLocalGlobalCtxt,
-                                     *const ThreadLocalInterners,
-                                     *const ThreadLocalQuery)>> = Cell::new(None)
-    }
+    use rayon_core;
 
     fn span_debug(span: syntax_pos::Span, f: &mut fmt::Formatter) -> fmt::Result {
         with(|tcx| {
@@ -1558,7 +1550,12 @@ pub mod tls {
                 current.set(track_diagnostic);
 
                 let global_query = maps::QueryJob::new(Vec::new(), false, false);
-                let result = enter(&gcx, &gcx.global_interners, &global_query, f);
+                let tcx = TyCtxt {
+                    gcx,
+                    interners: &gcx.global_interners,
+                    query: &global_query,
+                };
+                let result = enter(tcx, f);
                 current.set(original);
                 result
             });
@@ -1568,52 +1565,31 @@ pub mod tls {
         })
     }
 
-    pub fn enter<'a, 'gcx: 'tcx, 'tcx, F, R>(gcx: &'a GlobalCtxt<'gcx>,
-                                             interners: &'a CtxtInterners<'tcx>,
-                                             query: &'a maps::QueryJob<'gcx>,
+    pub fn enter<'a, 'gcx: 'tcx, 'tcx, F, R>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                                              f: F) -> R
         where F: FnOnce(TyCtxt<'a, 'gcx, 'tcx>) -> R
     {
-        let tls_query = maps::QueryJob::new(Vec::new(), false, true);
-        let gcx_ptr = gcx as *const _ as *const ThreadLocalGlobalCtxt;
-        let interners_ptr = interners as *const _ as *const ThreadLocalInterners;
-        let query_ptr = &tls_query as *const _ as *const ThreadLocalQuery;
-        TLS_TCX.with(|tls| {
-            let prev = tls.get();
-            tls.set(Some((gcx_ptr, interners_ptr, query_ptr)));
-            let ret = f(TyCtxt {
-                gcx,
-                interners,
-                query,
-            });
-            tls.set(prev);
-            ret
+        rayon_core::fiber::tlv::set(&tcx as *const _ as usize, || {
+            f(tcx)
         })
     }
 
     pub fn with<F, R>(f: F) -> R
         where F: for<'a, 'gcx, 'tcx> FnOnce(TyCtxt<'a, 'gcx, 'tcx>) -> R
     {
-        TLS_TCX.with(|tcx| {
-            let (gcx, interners, query) = tcx.get().unwrap();
-            let gcx = unsafe { &*(gcx as *const GlobalCtxt) };
-            let interners = unsafe { &*(interners as *const CtxtInterners) };
-            let query = unsafe { &*(query as *const maps::QueryJob) };
-            f(TyCtxt {
-                gcx,
-                interners,
-                query,
-            })
-        })
+        let tcx = rayon_core::fiber::tlv::get();
+        assert!(tcx != 0);
+        unsafe { f(*(tcx as *const TyCtxt)) }
     }
 
     pub fn with_opt<F, R>(f: F) -> R
         where F: for<'a, 'gcx, 'tcx> FnOnce(Option<TyCtxt<'a, 'gcx, 'tcx>>) -> R
     {
-        if TLS_TCX.with(|tcx| tcx.get().is_some()) {
-            with(|v| f(Some(v)))
-        } else {
+        let tcx = rayon_core::fiber::tlv::get();
+        if tcx == 0 {
             f(None)
+        } else {
+            unsafe { f(Some(*(tcx as *const TyCtxt))) }
         }
     }
 }

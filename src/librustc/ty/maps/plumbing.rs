@@ -98,6 +98,19 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         })
     }
 
+    pub(super) fn cycle_check(self, span: Span, query: &Query<'gcx>) -> Result<(), CycleError<'gcx>>
+    {
+        if let Some((i, _)) = self.query().stack.iter().enumerate().rev()
+                                 .find(|&(_, &(_, ref q))| q == query) {
+            Err(CycleError {
+                span,
+                cycle: self.query().stack[i..].iter().cloned().collect(),
+            })
+        } else {
+            Ok(())
+        }
+    }
+
     /// Try to read a node index for the node dep_node.
     /// A node will have an index, when it's already been marked green, or when we can mark it
     /// green. This function will mark the current task as a reader of the specified node, when
@@ -167,8 +180,8 @@ macro_rules! define_maps {
         use rustc_data_structures::sync::{Lock, LockGuard};
         use std::iter;
         use errors::Diagnostic;
-        use std::sync::atomic::Ordering;
         use ty::maps::plumbing::QUERY_DEPTH;
+        use std::sync::atomic::Ordering;
 
         define_map_struct! {
             tcx: $tcx,
@@ -258,7 +271,7 @@ macro_rules! define_maps {
                         QueryMsg::$name(profq_key!(tcx, key))
                     )
                 );
-/*
+
                 loop {
                     let job = if let Some(value) = tcx.maps.$name.borrow().map.get(&key) {
                         match *value {
@@ -272,10 +285,25 @@ macro_rules! define_maps {
                     } else {
                         break
                     };
-                    assert!(!tcx.query().tls);
-                    job.await();
-                }*/
+                    lazy_static! {
+                        static ref LOG: bool = ::std::env::var("QUERY_LOG").is_ok();
+                    }
 
+                    if *LOG {
+                        println!("({}) waiting on query {:?} latch {:x}",
+                        QUERY_DEPTH.load(Ordering::SeqCst),
+                        Query::$name(Clone::clone(&key)), &job.latch as *const _ as usize);
+                        for i in tcx.query().stack.iter() {
+                            println!("    query stack entry {:?}", i);
+
+                        }
+                    }
+                    // If there is a cycle, waiting will never complete
+                    tcx.cycle_check(span, &Query::$name(Clone::clone(&key)))?;
+                    job.await();
+                }
+/*
+                use std::sync::atomic::Ordering;
                 #[allow(warnings)]
                 loop {
                     let job = if let Some(value) = tcx.maps.$name.borrow().map.get(&key) {
@@ -304,7 +332,7 @@ macro_rules! define_maps {
                     };
                     //job.await();
                 }
-
+*/
                 // FIXME(eddyb) Get more valid Span's on queries.
                 // def_span guard is necessary to prevent a recursive loop,
                 // default_span calls def_span query internally.
@@ -403,23 +431,13 @@ macro_rules! define_maps {
                 -> Result<((R, Vec<Diagnostic>), Lrc<QueryJob<$tcx>>), CycleError<$tcx>>
                 where F: for<'b> FnOnce(TyCtxt<'b, $tcx, 'lcx>) -> R
             {
-                assert!(!tcx.query().tls);
-
                 let query = Query::$name(Clone::clone(&key));
 
-                if let Some((i, _)) = tcx.query().stack.iter().enumerate().rev()
-                                        .find(|&(_, &(_, ref q))| *q == query) {
-                    return Err(CycleError {
-                        span,
-                        cycle: tcx.query().stack.iter().step_by(i).cloned().collect(),
-                    });
-                }
+                tcx.cycle_check(span, &query)?;
 
                 lazy_static! {
                     static ref LOG: bool = ::std::env::var("QUERY_LOG").is_ok();
                 }
-
-                use std::sync::atomic::Ordering;
 
                 let entry = (span, query);
                 let stack = tcx.query().stack.iter().cloned().chain(iter::once(entry)).collect();
@@ -447,7 +465,9 @@ macro_rules! define_maps {
                        .or_insert(QueryResult::Started(job.clone()));
                 }
 
-                let r = compute(tcx.with_query(&*job));
+                let r = ty::tls::enter(tcx.with_query(&*job), |new_tcx| {
+                    compute(new_tcx)
+                });
 
                 if *LOG {
                     println!("ending query {:?}", query.clone());

@@ -16,7 +16,7 @@ graphviz = { path = "../libgraphviz" }
 jobserver = "0.1"
 log = "0.3"
 rayon = { git = "https://github.com/Zoxc/rayon.git", branch = "fiber" }
-rayon-core = { git = "https://github.com/Zoxc/rayon.git", branch = "fiber", features=["debug"] }
+rayon-core = { git = "https://github.com/Zoxc/rayon.git", branch = "fiber", features=["debug", "tlv"] }
 scoped-tls = { git = "https://github.com/Zoxc/scoped-tls.git", features=["nightly"] }
 owning_ref = { git = "https://github.com/Zoxc/owning-ref-rs.git" }
 rustc_back = { path = "../librustc_back" }

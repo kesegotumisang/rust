@@ -65,4 +65,5 @@ impl<'tcx> QueryJob<'tcx> {
 pub(super) enum QueryResult<'tcx, T> {
     Started(Lrc<QueryJob<'tcx>>),
     Complete(T),
+    Poisoned,
 }

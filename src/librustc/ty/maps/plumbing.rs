@@ -179,9 +179,12 @@ macro_rules! define_maps {
         use dep_graph::DepNodeIndex;
         use rustc_data_structures::sync::{Lock, LockGuard};
         use std::iter;
+        use std::mem;
+        use std::panic;
         use errors::Diagnostic;
         use ty::maps::plumbing::QUERY_DEPTH;
         use std::sync::atomic::Ordering;
+        use rayon_core;
 
         define_map_struct! {
             tcx: $tcx,
@@ -280,6 +283,9 @@ macro_rules! define_maps {
                                 profq_msg!(tcx, ProfileQueriesMsg::CacheHit);
                                 tcx.dep_graph.read_index(value.index);
                                 return Ok((&value.value).clone());
+                            },
+                            QueryResult::Poisoned => {
+                                panic::resume_unwind(Box::new(rayon_core::PoisonedJob))
                             },
                         }
                     } else {
@@ -465,9 +471,35 @@ macro_rules! define_maps {
                        .or_insert(QueryResult::Started(job.clone()));
                 }
 
-                let r = ty::tls::enter(tcx.with_query(&*job), |new_tcx| {
-                    compute(new_tcx)
-                });
+                struct OnPanic<F: Fn()>(F);
+
+                impl<F: Fn()> Drop for OnPanic<F> {
+                    fn drop(&mut self) {
+                        (self.0)();
+                    }
+                }
+
+                let r = {
+                    let on_panic = OnPanic(|| {
+                        // Poison the query so jobs waiting on it panics
+                        tcx.maps
+                        .$name
+                        .borrow_mut()
+                        .map
+                        .insert(key, QueryResult::Poisoned);
+                        // Also signal the completion of the job, so waiters
+                        // will continue execution
+                        job.signal_complete();
+                    });
+
+                    let r = ty::tls::enter(tcx.with_query(&*job), |new_tcx| {
+                        compute(new_tcx)
+                    });
+
+                    mem::forget(on_panic);
+
+                    r
+                };
 
                 if *LOG {
                     println!("ending query {:?}", query.clone());

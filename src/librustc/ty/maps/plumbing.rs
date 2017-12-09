@@ -276,6 +276,13 @@ macro_rules! define_maps {
                     )
                 );
 
+                // FIXME(eddyb) Get more valid Span's on queries.
+                // def_span guard is necessary to prevent a recursive loop,
+                // default_span calls def_span query internally.
+                if span == DUMMY_SP && stringify!($name) != "def_span" {
+                    span = key.default_span(tcx)
+                }
+
                 loop {
                     let job = if let Some(value) = tcx.maps.$name.borrow().map.get(&key) {
                         match *value {
@@ -340,13 +347,6 @@ macro_rules! define_maps {
                     //job.await();
                 }
 */
-                // FIXME(eddyb) Get more valid Span's on queries.
-                // def_span guard is necessary to prevent a recursive loop,
-                // default_span calls def_span query internally.
-                if span == DUMMY_SP && stringify!($name) != "def_span" {
-                    span = key.default_span(tcx)
-                }
-
                 // Fast path for when incr. comp. is off. `to_dep_node` is
                 // expensive for some DepKinds.
                 if !tcx.dep_graph.is_fully_enabled() {

@@ -1214,11 +1214,12 @@ pub fn in_rustc_thread<F, R>(f: F) -> Result<R, Box<Any + Send>>
 /// errors of the compiler.
 pub fn monitor<F: FnOnce() + Send + 'static>(f: F) {
     let data = Arc::new(Mutex::new(Vec::new()));
+    let data_for_thread = data.clone();
     let err = Sink(data.clone());
 
     let result = in_rustc_thread(move || {
         io::set_panic(Some(box err));
-        PANIC_SINK.set(data.clone(), || {
+        PANIC_SINK.set(&data_for_thread, || {
             f()
         })
     });

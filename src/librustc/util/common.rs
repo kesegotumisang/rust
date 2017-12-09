@@ -205,13 +205,13 @@ fn time_threads_impl<T, F>(what: &str, f: F) -> T where
         let total_thread_time: u64 = thread_times.iter().cloned().sum();
         let core_usage = total_thread_time as f64 / time as f64;
 
-        let mut data = format!("{:.3} - cores {:.2}x - cpu {:.2}% - threads (",
+        let mut data = format!("{:.6} - cores {:.2}x - cpu {:.2} - threads (",
                            time_secs,
                            core_usage,
-                           core_usage * 100.0 / (thread_times.len() - 1) as f64);
+                           core_usage / (thread_times.len() - 1) as f64);
 
         for (i, thread_time) in thread_times.into_iter().enumerate() {
-            data.push_str(&format!("{:.2}x", thread_time as f64 / time as f64));
+            data.push_str(&format!("{:.2}", thread_time as f64 / time as f64));
             if i == 0 {
                 data.push_str(" - ");
             }
@@ -269,7 +269,7 @@ pub fn duration_to_secs_str(dur: Duration) -> String {
     let secs = dur.as_secs() as f64 +
                dur.subsec_nanos() as f64 / NANOS_PER_SEC;
 
-    format!("{:.3}", secs)
+    format!("{:.6}", secs)
 }
 
 pub fn to_readable_str(mut val: usize) -> String {

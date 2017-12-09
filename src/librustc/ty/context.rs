@@ -63,8 +63,10 @@ use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
 use std::iter;
+use std::io;
+use std::io::Write;
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Mutex, Arc};
 use syntax::abi;
 use syntax::ast::{self, Name, NodeId};
 use syntax::attr;
@@ -882,6 +884,18 @@ pub struct GlobalCtxt<'tcx> {
     output_filenames: Arc<OutputFilenames>,
 }
 
+scoped_thread_local!(pub static PANIC_SINK: Arc<Mutex<Vec<u8>>>);
+
+pub struct Sink(pub Arc<Mutex<Vec<u8>>>);
+impl Write for Sink {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        Write::write(&mut *self.0.lock().unwrap(), data)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn query(self) -> &'a maps::QueryJob<'gcx> {
         self.query
@@ -1191,19 +1205,26 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             let (r, pool_end) = try_with(&PROFQ_CHAN, |prof_chan| {
                 try_with(&syntax::GLOBALS, |syntax_globals| {
                     try_with(&syntax_pos::GLOBALS, |syntax_pos_globals| {
-                        let main_handler = move |worker: &mut FnMut()| {
-                            maybe_set(&PROFQ_CHAN, prof_chan, || {
-                                maybe_set(&syntax::GLOBALS, syntax_globals, || {
-                                    maybe_set(&syntax_pos::GLOBALS, syntax_pos_globals, || {
-                                        tls::enter_global(gcx, |_| {
-                                            worker();
+                        try_with(&PANIC_SINK, |panic_sink| {
+                            let main_handler = move |worker: &mut FnMut()| {
+                                maybe_set(&PROFQ_CHAN, prof_chan, || {
+                                    maybe_set(&syntax::GLOBALS, syntax_globals, || {
+                                        maybe_set(&syntax_pos::GLOBALS, syntax_pos_globals, || {
+                                            if let Some(sink_data) = panic_sink {
+                                                let err = Sink(sink_data.clone());
+                                                io::set_panic(Some(box err));
+                                            }
+
+                                            tls::enter_global(gcx, |_| {
+                                                worker();
+                                            })
                                         })
                                     })
                                 })
-                            })
-                        };
+                            };
 
-                        rayon::ThreadPool::scoped_pool(config, main_handler, with_pool).unwrap()
+                            rayon::ThreadPool::scoped_pool(config, main_handler, with_pool).unwrap()
+                        })
                     })
                 })
             });

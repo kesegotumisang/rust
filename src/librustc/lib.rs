@@ -60,6 +60,7 @@
 #![feature(quote)]
 #![feature(refcell_replace_swap)]
 #![feature(rustc_diagnostic_macros)]
+#![feature(set_stdio)]
 #![feature(slice_patterns)]
 #![feature(specialization)]
 #![feature(unboxed_closures)]

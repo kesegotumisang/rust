@@ -73,6 +73,7 @@ use rustc::session::config::nightly_options;
 use rustc::session::{early_error, early_warn};
 use rustc::lint::Lint;
 use rustc::lint;
+use rustc::ty::{PANIC_SINK, Sink};
 use rustc::middle::cstore::CrateStore;
 use rustc_metadata::locator;
 use rustc_metadata::cstore::CStore;
@@ -1212,22 +1213,14 @@ pub fn in_rustc_thread<F, R>(f: F) -> Result<R, Box<Any + Send>>
 /// The diagnostic emitter yielded to the procedure should be used for reporting
 /// errors of the compiler.
 pub fn monitor<F: FnOnce() + Send + 'static>(f: F) {
-    struct Sink(Arc<Mutex<Vec<u8>>>);
-    impl Write for Sink {
-        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-            Write::write(&mut *self.0.lock().unwrap(), data)
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
     let data = Arc::new(Mutex::new(Vec::new()));
     let err = Sink(data.clone());
 
     let result = in_rustc_thread(move || {
         io::set_panic(Some(box err));
-        f()
+        PANIC_SINK.set(data.clone(), || {
+            f()
+        })
     });
 
     if let Err(value) = result {

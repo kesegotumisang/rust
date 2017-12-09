@@ -102,6 +102,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     {
         if let Some((i, _)) = self.query().stack.iter().enumerate().rev()
                                  .find(|&(_, &(_, ref q))| q == query) {
+            println!("    cycle_check failed for query {:?}, span: {:?}", query, span);
             Err(CycleError {
                 span,
                 cycle: self.query().stack[i..].iter().cloned().collect(),

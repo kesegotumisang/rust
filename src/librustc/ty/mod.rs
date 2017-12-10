@@ -42,7 +42,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::ops::Deref;
-use rustc_data_structures::sync::{par_iter, Send, Sync, Lrc};
+use rustc_data_structures::sync::{ParallelIterator, par_iter, Send, Sync, Lrc};
 use std::slice;
 use std::vec::IntoIter;
 use std::mem;

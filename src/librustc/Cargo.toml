@@ -15,7 +15,10 @@ fmt_macros = { path = "../libfmt_macros" }
 graphviz = { path = "../libgraphviz" }
 jobserver = "0.1"
 log = "0.3"
-owning_ref = "0.3.3"
+rayon = { git = "https://github.com/Zoxc/rayon.git", branch = "fiber" }
+rayon-core = { git = "https://github.com/Zoxc/rayon.git", branch = "fiber", features=["tlv"] }
+scoped-tls = { git = "https://github.com/Zoxc/scoped-tls.git", features=["nightly"] }
+owning_ref = { git = "https://github.com/Zoxc/owning-ref-rs.git" }
 rustc_back = { path = "../librustc_back" }
 rustc_const_math = { path = "../librustc_const_math" }
 rustc_data_structures = { path = "../librustc_data_structures" }
@@ -23,6 +26,7 @@ rustc_errors = { path = "../librustc_errors" }
 serialize = { path = "../libserialize" }
 syntax = { path = "../libsyntax" }
 syntax_pos = { path = "../libsyntax_pos" }
+lazy_static = "1.0.0"
 
 # Note that these dependencies are a lie, they're just here to get linkage to
 # work.
@@ -52,3 +56,7 @@ syntax_pos = { path = "../libsyntax_pos" }
 #        later crate stop compiling. If you can remove this and everything
 #        compiles, then please feel free to do so!
 flate2 = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+kernel32-sys = "0.2.2"
+winapi = "0.2.8"

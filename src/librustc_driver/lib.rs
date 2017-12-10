@@ -25,6 +25,8 @@
 #![feature(rustc_diagnostic_macros)]
 #![feature(set_stdio)]
 
+#![recursion_limit="256"]
+
 extern crate arena;
 extern crate getopts;
 extern crate graphviz;
@@ -71,6 +73,7 @@ use rustc::session::config::nightly_options;
 use rustc::session::{early_error, early_warn};
 use rustc::lint::Lint;
 use rustc::lint;
+use rustc::ty::{PANIC_SINK, Sink};
 use rustc::middle::cstore::CrateStore;
 use rustc_metadata::locator;
 use rustc_metadata::cstore::CStore;
@@ -89,9 +92,9 @@ use std::io::{self, Read, Write};
 use std::iter::repeat;
 use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
-use std::rc::Rc;
 use std::str;
 use std::sync::{Arc, Mutex};
+use rustc_data_structures::sync::Lrc;
 use std::thread;
 
 use syntax::ast;
@@ -187,9 +190,20 @@ mod rustc_trans {
 // The FileLoader provides a way to load files from sources other than the file system.
 pub fn run_compiler<'a>(args: &[String],
                         callbacks: &mut CompilerCalls<'a>,
-                        file_loader: Option<Box<FileLoader + 'static>>,
+                        file_loader: Option<Box<FileLoader + Send + Sync + 'static>>,
                         emitter_dest: Option<Box<Write + Send>>)
                         -> (CompileResult, Option<Session>)
+{
+    syntax::with_globals(&syntax::Globals::new(), || {
+        run_compiler_impl(args, callbacks, file_loader, emitter_dest)
+    })
+}
+
+fn run_compiler_impl<'a>(args: &[String],
+                         callbacks: &mut CompilerCalls<'a>,
+                         file_loader: Option<Box<FileLoader + Send + Sync + 'static>>,
+                         emitter_dest: Option<Box<Write + Send>>)
+                         -> (CompileResult, Option<Session>)
 {
     macro_rules! do_or_return {($expr: expr, $sess: expr) => {
         match $expr {
@@ -227,10 +241,10 @@ pub fn run_compiler<'a>(args: &[String],
         },
     };
 
-    let cstore = Rc::new(CStore::new(DefaultTransCrate::metadata_loader()));
+    let cstore = CStore::new(DefaultTransCrate::metadata_loader());
 
     let loader = file_loader.unwrap_or(box RealFileLoader);
-    let codemap = Rc::new(CodeMap::with_file_loader(loader, sopts.file_path_mapping()));
+    let codemap = Lrc::new(CodeMap::with_file_loader(loader, sopts.file_path_mapping()));
     let mut sess = session::build_session_with_codemap(
         sopts, input_file_path, descriptions, codemap, emitter_dest,
     );
@@ -243,7 +257,7 @@ pub fn run_compiler<'a>(args: &[String],
 
     do_or_return!(callbacks.late_callback(&matches,
                                           &sess,
-                                          &*cstore,
+                                          &cstore,
                                           &input,
                                           &odir,
                                           &ofile), Some(sess));
@@ -579,7 +593,6 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
                                                      &state.expanded_crate.take().unwrap(),
                                                      state.crate_name.unwrap(),
                                                      ppm,
-                                                     state.arena.unwrap(),
                                                      state.arenas.unwrap(),
                                                      state.output_filenames.unwrap(),
                                                      opt_uii.clone(),
@@ -1188,7 +1201,9 @@ pub fn in_rustc_thread<F, R>(f: F) -> Result<R, Box<Any + Send>>
         cfg = cfg.stack_size(STACK_SIZE);
     }
 
-    let thread = cfg.spawn(f);
+    let thread = cfg.spawn(|| {
+        syntax::with_globals(&syntax::Globals::new(), || f())
+    });
     thread.unwrap().join()
 }
 
@@ -1198,22 +1213,15 @@ pub fn in_rustc_thread<F, R>(f: F) -> Result<R, Box<Any + Send>>
 /// The diagnostic emitter yielded to the procedure should be used for reporting
 /// errors of the compiler.
 pub fn monitor<F: FnOnce() + Send + 'static>(f: F) {
-    struct Sink(Arc<Mutex<Vec<u8>>>);
-    impl Write for Sink {
-        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-            Write::write(&mut *self.0.lock().unwrap(), data)
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
     let data = Arc::new(Mutex::new(Vec::new()));
+    let data_for_thread = data.clone();
     let err = Sink(data.clone());
 
     let result = in_rustc_thread(move || {
         io::set_panic(Some(box err));
-        f()
+        PANIC_SINK.set(&data_for_thread, || {
+            f()
+        })
     });
 
     if let Err(value) = result {

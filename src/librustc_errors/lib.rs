@@ -33,14 +33,16 @@ use self::Level::*;
 
 use emitter::{Emitter, EmitterWriter};
 
+use rustc_data_structures::sync::{Lrc, Lock, LockCell, Send, Sync};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_data_structures::stable_hasher::StableHasher;
 
 use std::borrow::Cow;
-use std::cell::{RefCell, Cell};
-use std::mem;
-use std::rc::Rc;
+//use std::mem;
 use std::{error, fmt};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::SeqCst;
+use std::cell::Cell;
 
 mod diagnostic;
 mod diagnostic_builder;
@@ -92,6 +94,8 @@ pub struct SubstitutionPart {
     pub snippet: String,
 }
 
+pub type CodeMapperDyn = CodeMapper + Send + Sync;
+
 pub trait CodeMapper {
     fn lookup_char_pos(&self, pos: BytePos) -> Loc;
     fn span_to_lines(&self, sp: Span) -> FileLinesResult;
@@ -99,12 +103,13 @@ pub trait CodeMapper {
     fn span_to_filename(&self, sp: Span) -> FileName;
     fn merge_spans(&self, sp_lhs: Span, sp_rhs: Span) -> Option<Span>;
     fn call_span_if_macro(&self, sp: Span) -> Span;
-    fn ensure_filemap_source_present(&self, file_map: Rc<FileMap>) -> bool;
+    fn ensure_filemap_source_present(&self, file_map: Lrc<FileMap>) -> bool;
 }
 
 impl CodeSuggestion {
     /// Returns the assembled code suggestions and whether they should be shown with an underline.
-    pub fn splice_lines(&self, cm: &CodeMapper) -> Vec<(String, Vec<SubstitutionPart>)> {
+    pub fn splice_lines(&self, cm: &CodeMapperDyn)
+                        -> Vec<(String, Vec<SubstitutionPart>)> {
         use syntax_pos::{CharPos, Loc, Pos};
 
         fn push_trailing(buf: &mut String,
@@ -235,17 +240,21 @@ pub use diagnostic_builder::DiagnosticBuilder;
 pub struct Handler {
     pub flags: HandlerFlags,
 
-    err_count: Cell<usize>,
-    emitter: RefCell<Box<Emitter>>,
-    continue_after_error: Cell<bool>,
-    delayed_span_bug: RefCell<Option<Diagnostic>>,
-    tracked_diagnostics: RefCell<Option<Vec<Diagnostic>>>,
+    err_count: AtomicUsize,
+    emitter: Lock<Box<Emitter + Send>>,
+    continue_after_error: LockCell<bool>,
+    delayed_span_bug: Lock<Option<Diagnostic>>,
 
     // This set contains a hash of every diagnostic that has been emitted by
     // this handler. These hashes is used to avoid emitting the same error
     // twice.
-    emitted_diagnostics: RefCell<FxHashSet<u128>>,
+    emitted_diagnostics: Lock<FxHashSet<u128>>,
 }
+
+fn default_track_diagnostic(_: &Diagnostic) {}
+
+thread_local!(pub static TRACK_DIAGNOSTICS: Cell<fn(&Diagnostic)> =
+                Cell::new(default_track_diagnostic));
 
 #[derive(Default)]
 pub struct HandlerFlags {
@@ -258,7 +267,7 @@ impl Handler {
     pub fn with_tty_emitter(color_config: ColorConfig,
                             can_emit_warnings: bool,
                             treat_err_as_bug: bool,
-                            cm: Option<Rc<CodeMapper>>)
+                            cm: Option<Lrc<CodeMapperDyn>>)
                             -> Handler {
         Handler::with_tty_emitter_and_flags(
             color_config,
@@ -271,7 +280,7 @@ impl Handler {
     }
 
     pub fn with_tty_emitter_and_flags(color_config: ColorConfig,
-                                      cm: Option<Rc<CodeMapper>>,
+                                      cm: Option<Lrc<CodeMapperDyn>>,
                                       flags: HandlerFlags)
                                       -> Handler {
         let emitter = Box::new(EmitterWriter::stderr(color_config, cm, false));
@@ -280,7 +289,7 @@ impl Handler {
 
     pub fn with_emitter(can_emit_warnings: bool,
                         treat_err_as_bug: bool,
-                        e: Box<Emitter>)
+                        e: Box<Emitter + Send>)
                         -> Handler {
         Handler::with_emitter_and_flags(
             e,
@@ -291,15 +300,14 @@ impl Handler {
             })
     }
 
-    pub fn with_emitter_and_flags(e: Box<Emitter>, flags: HandlerFlags) -> Handler {
+    pub fn with_emitter_and_flags(e: Box<Emitter + Send>, flags: HandlerFlags) -> Handler {
         Handler {
             flags,
-            err_count: Cell::new(0),
-            emitter: RefCell::new(e),
-            continue_after_error: Cell::new(true),
-            delayed_span_bug: RefCell::new(None),
-            tracked_diagnostics: RefCell::new(None),
-            emitted_diagnostics: RefCell::new(FxHashSet()),
+            err_count: AtomicUsize::new(0),
+            emitter: Lock::new(e),
+            continue_after_error: LockCell::new(true),
+            delayed_span_bug: Lock::new(None),
+            emitted_diagnostics: Lock::new(FxHashSet()),
         }
     }
 
@@ -310,7 +318,7 @@ impl Handler {
     // NOTE: DO NOT call this function from rustc, as it relies on `err_count` being non-zero
     // if an error happened to avoid ICEs. This function should only be called from tools.
     pub fn reset_err_count(&self) {
-        self.err_count.set(0);
+        self.err_count.store(0, SeqCst);
     }
 
     pub fn struct_dummy<'a>(&'a self) -> DiagnosticBuilder<'a> {
@@ -506,19 +514,19 @@ impl Handler {
 
     fn bump_err_count(&self) {
         self.panic_if_treat_err_as_bug();
-        self.err_count.set(self.err_count.get() + 1);
+        self.err_count.fetch_add(1, SeqCst);
     }
 
     pub fn err_count(&self) -> usize {
-        self.err_count.get()
+        self.err_count.load(SeqCst)
     }
 
     pub fn has_errors(&self) -> bool {
-        self.err_count.get() > 0
+        self.err_count() > 0
     }
     pub fn abort_if_errors(&self) {
         let s;
-        match self.err_count.get() {
+        match self.err_count() {
             0 => {
                 if let Some(bug) = self.delayed_span_bug.borrow_mut().take() {
                     DiagnosticBuilder::new_diagnostic(self, bug).emit();
@@ -527,7 +535,7 @@ impl Handler {
             }
             1 => s = "aborting due to previous error".to_string(),
             _ => {
-                s = format!("aborting due to {} previous errors", self.err_count.get());
+                s = format!("aborting due to {} previous errors", self.err_count());
             }
         }
 
@@ -556,23 +564,12 @@ impl Handler {
         }
     }
 
-    pub fn track_diagnostics<F, R>(&self, f: F) -> (R, Vec<Diagnostic>)
-        where F: FnOnce() -> R
-    {
-        let prev = mem::replace(&mut *self.tracked_diagnostics.borrow_mut(),
-                                Some(Vec::new()));
-        let ret = f();
-        let diagnostics = mem::replace(&mut *self.tracked_diagnostics.borrow_mut(), prev)
-            .unwrap();
-        (ret, diagnostics)
-    }
-
     fn emit_db(&self, db: &DiagnosticBuilder) {
         let diagnostic = &**db;
 
-        if let Some(ref mut list) = *self.tracked_diagnostics.borrow_mut() {
-            list.push(diagnostic.clone());
-        }
+        TRACK_DIAGNOSTICS.with(|track_diagnostics| {
+            track_diagnostics.get()(diagnostic);
+        });
 
         let diagnostic_hash = {
             use std::hash::Hash;

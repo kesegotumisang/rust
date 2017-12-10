@@ -86,7 +86,6 @@ extern crate x86;
 extern crate owning_ref;
 extern crate rustc_back;
 #[macro_use] extern crate rustc_data_structures;
-#[macro_use] extern crate lazy_static;
 extern crate serialize;
 extern crate rustc_const_math;
 extern crate rustc_errors as errors;

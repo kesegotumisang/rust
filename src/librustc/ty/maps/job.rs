@@ -45,20 +45,20 @@ impl<'tcx> QueryJob<'tcx> {
     }
 
     pub fn await(&self) {
-        #[cfg(parallel_queries)]
+        /*#[cfg(parallel_queries)]
         registry::in_worker(|worker, _| {
             unsafe {
                 worker.wait_until(&self.latch);
             }
-        });
+        });*/
     }
 
     pub fn signal_complete(&self) {
-        #[cfg(parallel_queries)]
+        /*#[cfg(parallel_queries)]
         {
             self.latch.set();
             Registry::current().signal();
-        }
+        }*/
     }
 }
 

@@ -40,6 +40,7 @@
        html_root_url = "https://doc.rust-lang.org/nightly/")]
 #![deny(warnings)]
 
+#![feature(asm)]
 #![feature(box_patterns)]
 #![feature(box_syntax)]
 #![feature(conservative_impl_trait)]
@@ -82,7 +83,6 @@ extern crate libc;
 extern crate kernel32;
 #[cfg(windows)]
 extern crate winapi;
-extern crate x86;
 extern crate owning_ref;
 extern crate rustc_back;
 #[macro_use] extern crate rustc_data_structures;

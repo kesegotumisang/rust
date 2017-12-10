@@ -160,9 +160,21 @@ fn time_threads_impl<T, F>(what: &str, f: F) -> T where
 {
     use rayon_core::registry;
     use std::iter;
-    use x86;
     use winapi;
     use kernel32;
+
+    #[allow(unused_mut)]
+    fn read_counter() -> u64 {
+        let mut low: u32;
+        let mut high: u32;
+
+        unsafe {
+            asm!("xor %%rax, %%rax; cpuid; rdtsc"
+                : "={eax}" (low), "={edx}" (high) :: "memory,rbx,rcx");
+        }
+
+        ((high as u64) << 32) | (low as u64)
+    }
 
     let registry = registry::get_current_registry();
     if let Some(registry) = registry {
@@ -186,9 +198,10 @@ fn time_threads_impl<T, F>(what: &str, f: F) -> T where
                 assert!(kernel32::QueryThreadCycleTime(handle, &mut begin[i]) == winapi::TRUE);
             }
         }
-        let time_start = unsafe { x86::shared::time::rdtsc() };
+
+        let time_start = read_counter();
         let result = f();
-        let time_end = unsafe { x86::shared::time::rdtsc() };
+        let time_end = read_counter();
         for (i, &handle) in threads.iter().enumerate() {
             unsafe {
                 assert!(kernel32::QueryThreadCycleTime(handle, &mut end[i]) == winapi::TRUE);

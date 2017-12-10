@@ -787,9 +787,13 @@ pub fn phase_2_configure_and_expand<F>(sess: &Session,
         let mut ecx = ExtCtxt::new(&sess.parse_sess, cfg, &mut resolver);
         let err_count = ecx.parse_sess.span_diagnostic.err_count();
 
-        let krate = ecx.monotonic_expander().expand_crate(krate);
+        let krate = time(time_passes, "expand crate", || {
+            ecx.monotonic_expander().expand_crate(krate);
+        });
 
-        ecx.check_unused_macros();
+        time(time_passes, "check unused macros", || {
+            ecx.check_unused_macros();
+        });
 
         let mut missing_fragment_specifiers: Vec<_> =
             ecx.parse_sess.missing_fragment_specifiers.borrow().iter().cloned().collect();

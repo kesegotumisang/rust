@@ -169,8 +169,8 @@ fn time_threads_impl<T, F>(what: &str, f: F) -> T where
         let mut high: u32;
 
         unsafe {
-            asm!("xor %%rax, %%rax; cpuid; rdtsc"
-                : "={eax}" (low), "={edx}" (high) :: "memory,rbx,rcx");
+            asm!("xor %rax, %rax; cpuid; rdtsc"
+                : "={eax}" (low), "={edx}" (high) :: "memory", "rbx", "rcx");
         }
 
         ((high as u64) << 32) | (low as u64)

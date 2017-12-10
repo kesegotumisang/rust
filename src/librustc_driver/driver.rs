@@ -788,7 +788,7 @@ pub fn phase_2_configure_and_expand<F>(sess: &Session,
         let err_count = ecx.parse_sess.span_diagnostic.err_count();
 
         let krate = time(time_passes, "expand crate", || {
-            ecx.monotonic_expander().expand_crate(krate);
+            ecx.monotonic_expander().expand_crate(krate)
         });
 
         time(time_passes, "check unused macros", || {

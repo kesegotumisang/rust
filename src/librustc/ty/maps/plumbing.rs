@@ -97,16 +97,14 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         })
     }
 
-    pub(super) fn cycle_check(self, span: Span, query: &Query<'gcx>) -> Result<(), CycleError<'gcx>>
+    pub(super) fn cycle_check(self, query: &Query<'gcx>)
+                             -> Option<Vec<(Span, Query<'gcx>)>>
     {
         if let Some((i, _)) = self.query().stack.iter().enumerate().rev()
                                  .find(|&(_, &(_, ref q))| q == query) {
-            Err(CycleError {
-                span,
-                cycle: self.query().stack[i..].iter().cloned().collect(),
-            })
+            Some(self.query().stack[i..].iter().cloned().collect())
         } else {
-            Ok(())
+            None
         }
     }
 
@@ -270,13 +268,6 @@ macro_rules! define_maps {
                     )
                 );
 
-                // FIXME(eddyb) Get more valid Span's on queries.
-                // def_span guard is necessary to prevent a recursive loop,
-                // default_span calls def_span query internally.
-                if span == DUMMY_SP && stringify!($name) != "def_span" {
-                    span = key.default_span(tcx)
-                }
-
                 loop {
                     let job = if let Some(value) = tcx.maps.$name.borrow().map.get(&key) {
                         match *value {
@@ -294,7 +285,11 @@ macro_rules! define_maps {
                         break
                     };
                     // If there is a cycle, waiting will never complete
-                    tcx.cycle_check(span, &Query::$name(Clone::clone(&key)))?;
+                    if let Some(_) = tcx.cycle_check(&Query::$name(Clone::clone(&key))) {
+                        // There was a cycle. Pretend there's no entry in the cache.
+                        // We'll hit the other cycle check below
+                        break;
+                    }
                     job.await();
                 }
 /*
@@ -328,6 +323,13 @@ macro_rules! define_maps {
                     //job.await();
                 }
 */
+                // FIXME(eddyb) Get more valid Span's on queries.
+                // def_span guard is necessary to prevent a recursive loop,
+                // default_span calls def_span query internally.
+                if span == DUMMY_SP && stringify!($name) != "def_span" {
+                    span = key.default_span(tcx)
+                }
+
                 // Fast path for when incr. comp. is off. `to_dep_node` is
                 // expensive for some DepKinds.
                 if !tcx.dep_graph.is_fully_enabled() {
@@ -421,7 +423,12 @@ macro_rules! define_maps {
             {
                 let query = Query::$name(Clone::clone(&key));
 
-                tcx.cycle_check(span, &query)?;
+                if let Some(cycle) = tcx.cycle_check(&query) {
+                    return Err(CycleError {
+                        span,
+                        cycle,
+                    });
+                }
 
                 let entry = (span, query);
                 let stack = tcx.query().stack.iter().cloned().chain(iter::once(entry)).collect();
